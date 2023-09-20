@@ -1,0 +1,5 @@
+embeddings {
+  tensor_name: "region:02500"
+  metadata_path: "02500/region/metadata.tsv"
+  tensor_path: "02500/region/tensors.tsv"
+}

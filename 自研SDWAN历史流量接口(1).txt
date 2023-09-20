@@ -1,0 +1,16 @@
+自研SDWAN - 1.0生产环境接口：https://sdwan-uiv1.dyxnet.com:10082
+账号密码：jeffz/jeffz#202309
+
+登陆接口：
+POST https://sdwan-uiv1.dyxnet.com:10082/api/auth/login
+Body: {"account": "user", "password":"password"}
+获取返回json中的token字段，在下述流量接口中需要用到
+
+流量查询接口（需要增加请求头Authorization=${token}）：
+客户A：
+GET https://sdwan-uiv1.dyxnet.com:10082/api/cpe/65/peers/networkUsage/wanType/VRF_PEER/wan/0?from=2023-08-01%2000:00:00&to=2023-08-01%2012:00:00
+GET https://sdwan-uiv1.dyxnet.com:10082/api/cpe/31/peers/networkUsage/wanType/VRF_PEER/wan/0?from=2023-08-01%2000:00:00&to=2023-08-01%2012:00:00
+
+客户B：
+GET https://sdwan-uiv1.dyxnet.com:10082/api/cpe/33/peers/networkUsage/wanType/VRF_PEER/wan/0?from=2023-08-01%2000:00:00&to=2023-08-01%2012:00:00
+GET https://sdwan-uiv1.dyxnet.com:10082/api/cpe/36/peers/networkUsage/wanType/VRF_PEER/wan/0?from=2023-08-01%2000:00:00&to=2023-08-01%2012:00:00
