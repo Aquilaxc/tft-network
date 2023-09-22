@@ -26,15 +26,15 @@ data["line"] = data["line"].astype('category').astype(str)
 print("*" * 50, data.columns)
 print(data.dtypes)
 
-max_prediction_length = 100
-max_encoder_length = 600
+max_prediction_length = 288
+max_encoder_length = 1440
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
     time_idx="time_idx",
     target="usage",
-    group_ids=["customer", "line"],
+    group_ids=["customer", "line", "direction"],
     min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
     min_prediction_length=1,
@@ -45,7 +45,7 @@ training = TimeSeriesDataSet(
     time_varying_unknown_categoricals=[],
     time_varying_unknown_reals=[],
     target_normalizer=GroupNormalizer(
-        groups=["customer", "line"], transformation="softplus"
+        groups=["customer", "line", "direction"], transformation="softplus"
     ),  # use softplus and normalize by group
     add_relative_time_idx=True,
     add_target_scales=True,
@@ -57,23 +57,23 @@ training = TimeSeriesDataSet(
 validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
 
 # create dataloaders for model
-batch_size = 128  # set this between 32 to 128
+batch_size = 256  # set this between 32 to 128
 # print(training)
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
-def train(cpu=True):
+def train(gpu=True, batch_limit=100):
     # configure network and trainer
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
     logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 
     trainer = pl.Trainer(
-        max_epochs=120,
-        accelerator="cpu" if cpu else "cuda",
+        max_epochs=60,
+        accelerator="cuda" if gpu else "cpu",
         enable_model_summary=True,
         gradient_clip_val=0.1,
-        limit_train_batches=999,  # coment in for training, running valiation every 30 batches
+        limit_train_batches=batch_limit,  # coment in for training, running valiation every 30 batches
         # fast_dev_run=True,  # comment in to check that networkor dataset has no serious bugs
         callbacks=[lr_logger, early_stop_callback],
         logger=logger,
@@ -107,7 +107,7 @@ def train(cpu=True):
 
 def test(best_model_path):
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
+    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
     print("MAE", MAE()(predictions.output, predictions.y))
 
     # calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
@@ -116,16 +116,23 @@ def test(best_model_path):
 
     # # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
     raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True)
-    print("~"*50, raw_predictions)
-    fig, ax = plt.subplots(2, 1, figsize=(10, 4))
-    for idx in range(2):  # plot 10 examples
+    print("*"*50, raw_predictions.x["groups"])
+    print("~"*50, raw_predictions.x)
+    print("~"*50, raw_predictions.y)
+    fig, ax = plt.subplots(4, 2)
+    ax = ax.ravel()
+    for idx in range(8):  # plot 10 examples
         best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-    # ax[0].legend()
+    ax[0].legend()
     plt.show()
 
 
 if __name__ == "__main__":
-    best_model_path = train()
-    print("best model path", best_model_path)
+    # import argparse
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
+    # opt = parser.parse_args(args=[])
+    # best_model_path = train(gpu=True)
+    # print("best model path", best_model_path)
     # test(best_model_path)
-    # test("lightning_logs/lightning_logs/version_10/checkpoints/epoch=27-step=7588.ckpt")
+    test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")
