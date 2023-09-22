@@ -21,7 +21,7 @@ from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 # from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 
-data = pd.read_csv("data/network/network_data_5min_processed.csv")
+data = pd.read_csv("data/network/network_data_15min_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
 print("*" * 50, data.columns)
 print(data.dtypes)
@@ -33,19 +33,19 @@ training_cutoff = data["time_idx"].max() - max_prediction_length
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
     time_idx="time_idx",
-    target="usage",
-    group_ids=["customer", "line", "direction"],
+    target="in",
+    group_ids=["customer", "line"],
     min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
     min_prediction_length=1,
     max_prediction_length=max_prediction_length,
-    static_categoricals=["customer", "line", "direction"],
+    static_categoricals=["customer", "line"],
     time_varying_known_categoricals=[],
     time_varying_known_reals=["month", "day", "hour", "minute"],
     time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=[],
+    time_varying_unknown_reals=["out"],
     target_normalizer=GroupNormalizer(
-        groups=["customer", "line", "direction"], transformation="softplus"
+        groups=["customer", "line"], transformation="softplus"
     ),  # use softplus and normalize by group
     add_relative_time_idx=True,
     add_target_scales=True,
@@ -56,13 +56,7 @@ training = TimeSeriesDataSet(
 # for each series
 validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
 
-# create dataloaders for model
-batch_size = 256  # set this between 32 to 128
-# print(training)
-train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
-val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
-
-def train(gpu=True, batch_limit=100):
+def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0):
     # configure network and trainer
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
@@ -105,7 +99,7 @@ def train(gpu=True, batch_limit=100):
     return best_model_path
 
 
-def test(best_model_path):
+def test(best_model_path, val_dataloader):
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
     predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
     print("MAE", MAE()(predictions.output, predictions.y))
@@ -128,11 +122,25 @@ def test(best_model_path):
 
 
 if __name__ == "__main__":
-    # import argparse
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
-    # opt = parser.parse_args(args=[])
-    # best_model_path = train(gpu=True)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
+    parser.add_argument("--bs", type=int, default=128, help="batch size")
+    parser.add_argument("--bl", type=float, default=1.0, help="batch limit")
+
+    # opt = parser.parse_args()
+    opt = parser.parse_args(args=[])  # for Jupyter Notebook (Google Colab / Kaggle)
+    # create dataloaders for model
+    batch_size = opt.bs  # set this between 32 to 128
+    # print(training)
+    print("#"*60)
+    print(f"##  USE GPU={opt.gpu} | Batch Size={opt.bs} | Batch Limit={opt.bl}")
+    print("#"*60)
+    # train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
+    # val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
+    #
+    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+    #                         gpu=opt.gpu, batch_limit=opt.bl)
     # print("best model path", best_model_path)
-    # test(best_model_path)
-    test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")
+    # test(best_model_path, val_dataloader)
+    # test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")

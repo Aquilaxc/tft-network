@@ -35,7 +35,7 @@ def europe_data():
 
 def network_data_preprocess(data="data/network/network_data_5min.csv"):
     df = pd.read_csv(data)
-    df = pd.melt(df, id_vars=["time", "customer", "line"], var_name="direction", value_name="usage")
+    # df = pd.melt(df, id_vars=["time", "customer", "line"], var_name="direction", value_name="usage")
     if "time_idx" not in df.columns:
         df["time_idx"] = df.groupby("line").cumcount() + 1
     df["time"] = pd.to_datetime(df["time"], format='mixed')
@@ -46,11 +46,15 @@ def network_data_preprocess(data="data/network/network_data_5min.csv"):
     df["line"] = df["line"].astype('category')
     data_name = data.split('.')[0]
     df.to_csv(f"{data_name}_processed.csv")
+    print(f"{data_name}_processed.csv")
 
 
 if __name__ == "__main__":
-    network_data_preprocess()
-    pre = pd.read_csv("data/network/network_data_5min.csv")
+    data = "data/network/network_data_15min.csv"
+
+    data_processed = f"{(data.split('.')[0])}_processed.csv"
+    network_data_preprocess(data)
+    pre = pd.read_csv(data)
     print(pre.shape)
-    post = pd.read_csv("data/network/network_data_5min_processed.csv")
+    post = pd.read_csv(data_processed)
     print(post.shape)
