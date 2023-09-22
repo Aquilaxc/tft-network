@@ -9,7 +9,7 @@ import pandas as pd
 import os
 import openpyxl
 
-token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2OTUyNTAzOTU0NDIsInBheWxvYWQiOiIxNDYifQ.WE5CzBWCHJGJeOt9LjIr_V1Uk0E7egqZJp4-3_WUaU0"
+token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2OTU0MzE1NDUwMDcsInBheWxvYWQiOiIxNDYifQ.fli7-G63LtrUdCKPahRHKVXl75asBZuyQWHcbz1IRoE"
 # url_login = "https://sdwan-uiv1.dyxnet.com:10082/api/auth/login"
 # curl -k -i -X POST "https://sdwan-uiv1.dyxnet.com:10082/api/auth/login" -H  "Content-Type: application/json" -d "{\"account\":\"jeffz\", \"password\": \"jeffz#202309\"}"
 
@@ -71,7 +71,7 @@ def get_data(file_name="network_data.csv"):
         df_output.to_csv(file_name, index=False)
 
 
-def get_data_5min(file_name="network_data.csv"):
+def get_data_15min(file_name="network_data.csv"):
     format = file_name.split('.')[-1]
     start_date = datetime(2023, 6, 1)
     end_date = datetime(2023, 9, 18)
@@ -83,7 +83,7 @@ def get_data_5min(file_name="network_data.csv"):
     for customer in customers:
         current_start_date = start_date
         while current_start_date <= end_date:
-            current_end_date = current_start_date + timedelta(days=2)
+            current_end_date = current_start_date + timedelta(days=6)
             start_month = current_start_date.strftime('%m')
             start_day = current_start_date.strftime('%d')
             end_month = current_end_date.strftime('%m')
@@ -94,7 +94,7 @@ def get_data_5min(file_name="network_data.csv"):
             data = login_response.json()
             data = data["data"]["peerNetworkUsageList"][0]["data"]
 
-            current_start_date += timedelta(days=3)       # Next time window, 3 days later
+            current_start_date += timedelta(days=7)       # Next time window, 3 days later
 
             if data == []:
                 print(f"xxxx  customer<{customer}>, {start_month}-{start_day} ~ {end_month}-{end_day}: None")
@@ -145,7 +145,7 @@ def show_data_plot(raw_data="network_data.csv"):
 
 if __name__ == "__main__":
     # get_data()
-    # get_data_5min("network_data_5min.csv")
+    # get_data_15min("network_data_15min.csv")
     # try_data()
-    show_data_plot("network_data_5min.csv")
+    show_data_plot("network_data_15min.csv")
 
