@@ -1,0 +1,10 @@
+embeddings {
+  tensor_name: "customer:01968"
+  metadata_path: "01968/customer/metadata.tsv"
+  tensor_path: "01968/customer/tensors.tsv"
+}
+embeddings {
+  tensor_name: "line:01968"
+  metadata_path: "01968/line/metadata.tsv"
+  tensor_path: "01968/line/tensors.tsv"
+}

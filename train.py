@@ -125,22 +125,22 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
-    parser.add_argument("--bs", type=int, default=128, help="batch size")
+    parser.add_argument("--bs", type=int, default=512, help="batch size")
     parser.add_argument("--bl", type=float, default=1.0, help="batch limit")
 
-    # opt = parser.parse_args()
-    opt = parser.parse_args(args=[])  # for Jupyter Notebook (Google Colab / Kaggle)
+    opt = parser.parse_args()
+    # opt = parser.parse_args(args=[])  # for Jupyter Notebook (Google Colab / Kaggle)
     # create dataloaders for model
     batch_size = opt.bs  # set this between 32 to 128
     # print(training)
     print("#"*60)
     print(f"##  USE GPU={opt.gpu} | Batch Size={opt.bs} | Batch Limit={opt.bl}")
     print("#"*60)
-    # train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
-    # val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
-    #
-    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-    #                         gpu=opt.gpu, batch_limit=opt.bl)
-    # print("best model path", best_model_path)
-    # test(best_model_path, val_dataloader)
+    train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
+    val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
+
+    best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+                            gpu=opt.gpu, batch_limit=opt.bl)
+    print("best model path", best_model_path)
+    test(best_model_path, val_dataloader)
     # test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")
