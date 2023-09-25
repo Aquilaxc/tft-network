@@ -26,8 +26,8 @@ data["line"] = data["line"].astype('category').astype(str)
 print("*" * 50, data.columns)
 print(data.dtypes)
 
-max_prediction_length = 288
-max_encoder_length = 1440
+max_prediction_length = 100
+max_encoder_length = 600
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 training = TimeSeriesDataSet(
