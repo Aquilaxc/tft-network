@@ -26,8 +26,8 @@ data["line"] = data["line"].astype('category').astype(str)
 print("*" * 50, data.columns)
 print(data.dtypes)
 
-max_prediction_length = 100
-max_encoder_length = 600
+max_prediction_length = 288
+max_encoder_length = 1440
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 training = TimeSeriesDataSet(
@@ -100,8 +100,8 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
 
 
 def test(best_model_path, val_dataloader):
-    best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
+    best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path, map_location='cpu')
+    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
     print("MAE", MAE()(predictions.output, predictions.y))
 
     # calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
@@ -110,15 +110,36 @@ def test(best_model_path, val_dataloader):
 
     # # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
     raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True)
-    print("*"*50, raw_predictions.x["groups"])
-    print("~"*50, raw_predictions.x)
-    print("~"*50, raw_predictions.y)
-    fig, ax = plt.subplots(4, 2)
+    # print("*"*50, raw_predictions.x["groups"])
+    # print("~"*50, raw_predictions.x)
+    # print("~"*50, raw_predictions.y)
+    fig, ax = plt.subplots(2, 2)
     ax = ax.ravel()
-    for idx in range(8):  # plot 10 examples
-        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-    ax[0].legend()
+    print(raw_predictions.x)
+    for idx in range(4):  # plot 10 examples
+        print("ax", idx)
+        # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
+        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
+        v = raw_predictions.x["groups"][idx]
+        # print(next(key for key, value in best_tft.hparams["embedding_labels"]["customer"] if value == v[0]))
+        subtitle = (next(key for key, value in best_tft.hparams["embedding_labels"]["customer"].items() if value == v[0]) +
+                    ", " +
+                    next(key for key, value in best_tft.hparams["embedding_labels"]["line"].items() if value == v[1]))
+        ax[idx].set_title(subtitle)
+    # ax[0].legend()
+    plt.subplots_adjust(wspace=0.3, hspace=0.3)
+
+    # predictions = best_tft.predict(val_dataloader, return_x=True)
+    # print("~~~" * 3, predictions.x)
+    # predictions_vs_actuals = best_tft.calculate_prediction_actual_by_variable(predictions.x, predictions.output)
+    # best_tft.plot_prediction_actual_by_variable(predictions_vs_actuals)
+
+    interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
+    best_tft.plot_interpretation(interpretation)
+
+    print("@"*70, best_tft.hparams)
     plt.show()
+
 
 
 if __name__ == "__main__":
@@ -139,8 +160,16 @@ if __name__ == "__main__":
     train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
     val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
-    best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-                            gpu=opt.gpu, batch_limit=opt.bl)
-    print("best model path", best_model_path)
-    test(best_model_path, val_dataloader)
-    # test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")
+    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+    #                         gpu=opt.gpu, batch_limit=opt.bl)
+    # print("best model path", best_model_path)
+    # test(best_model_path, val_dataloader)
+    test("lightning_logs/lightning_logs/colab_0924/checkpoints/epoch=23-step=1968.ckpt", val_dataloader)
+    # test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt", val_dataloader)
+
+
+    # checkpoint1 = torch.load("lightning_logs/lightning_logs/colab_0924/checkpoints/epoch=23-step=1968.ckpt", map_location=torch.device("cpu"))
+    # print(checkpoint1["optimizer_states"])
+    # print("#" *80)
+    # checkpoint2 = torch.load("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt", map_location=torch.device("cpu"))
+    # print(checkpoint2.keys())
