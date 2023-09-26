@@ -14,6 +14,7 @@ from lightning.pytorch.callbacks import EarlyStopping, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
 import numpy as np
 import pandas as pd
+pd.set_option('display.max_columns', None)
 import torch
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
@@ -23,17 +24,22 @@ from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 
 data = pd.read_csv("data/network/network_data_15min_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
-print("*" * 50, data.columns)
+print("*" * 50)
+print(data.columns)
 print(data.dtypes)
+print("NA\n", data[data["log_in"].isna()])
 
-max_prediction_length = 288
-max_encoder_length = 1440
+max_prediction_length = 96
+max_encoder_length = max_prediction_length * 2
 training_cutoff = data["time_idx"].max() - max_prediction_length
+
+print("time idx ", data["time_idx"].max())
+print("training cutoff", training_cutoff)
 
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
     time_idx="time_idx",
-    target="in",
+    target="log_in",
     group_ids=["customer", "line"],
     min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
@@ -41,9 +47,9 @@ training = TimeSeriesDataSet(
     max_prediction_length=max_prediction_length,
     static_categoricals=["customer", "line"],
     time_varying_known_categoricals=[],
-    time_varying_known_reals=["month", "day", "hour", "minute"],
+    time_varying_known_reals=["month_cos", "weekday_cos", "day_cos", "hour_cos", "minute_cos"],
     time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=["out"],
+    time_varying_unknown_reals=["log_in", "log_out"],
     target_normalizer=GroupNormalizer(
         groups=["customer", "line"], transformation="softplus"
     ),  # use softplus and normalize by group
@@ -52,9 +58,13 @@ training = TimeSeriesDataSet(
     add_encoder_length=True,
 )
 
+print("train ", type(training))
+
 # create validation set (predict=True) which means to predict the last max_prediction_length points in time
 # for each series
 validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
+
+
 
 def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0):
     # configure network and trainer
@@ -75,11 +85,11 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
 
     tft = TemporalFusionTransformer.from_dataset(
         training,
-        learning_rate=0.03,
-        hidden_size=16,
-        attention_head_size=2,
+        learning_rate=0.001,
+        hidden_size=160,
+        attention_head_size=4,
         dropout=0.1,
-        hidden_continuous_size=8,
+        hidden_continuous_size=160,
         loss=QuantileLoss(),
         log_interval=10,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
         optimizer="Ranger",
@@ -102,22 +112,41 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
 def test(best_model_path, val_dataloader):
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
     predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
+
+    for batch in val_dataloader:
+        data, labels = batch
+        for key, value in data.items():
+            print(key, value.shape)
+        # print(labels)
+        print("target scale\n", data["target_scale"])
+        print("decoder target\n", data["decoder_target"].mean(axis=1))
+        for l in labels:
+            if l is not None:
+                print("labels:   ", l.shape)
+            else:
+                print("labels:    None.")
+
     print("MAE", MAE()(predictions.output, predictions.y))
 
     # calculate baseline mean absolute error, i.e. predict next value as the last available value from the history
     baseline_predictions = Baseline().predict(val_dataloader, return_y=True)
     print("Baseline", MAE()(baseline_predictions.output, baseline_predictions.y))
 
-    # # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
-    raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True)
-    print("*"*50, raw_predictions.x["groups"])
-    print("~"*50, raw_predictions.x)
-    print("~"*50, raw_predictions.y)
-    fig, ax = plt.subplots(4, 2)
+    # # # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
+    raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True, return_y=True)
+    for key, value in raw_predictions.items():
+        # s = value.shape if value is not None else "None"
+        print("raw predict---", key)
+    # print("*"*50, raw_predictions.x["groups"])
+    # print("~"*50, raw_predictions.x)
+    # print("~"*50, raw_predictions.y)
+    fig, ax = plt.subplots(2, 2)
     ax = ax.ravel()
-    for idx in range(8):  # plot 10 examples
+    for idx in range(4):  # plot 10 examples
         best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-    ax[0].legend()
+    # # ax[0].legend()
+    interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
+    best_tft.plot_interpretation(interpretation)
     plt.show()
 
 
@@ -125,7 +154,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
-    parser.add_argument("--bs", type=int, default=512, help="batch size")
+    parser.add_argument("--bs", type=int, default=64, help="batch size")
     parser.add_argument("--bl", type=float, default=1.0, help="batch limit")
 
     opt = parser.parse_args()
@@ -139,8 +168,8 @@ if __name__ == "__main__":
     train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
     val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
-    best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-                            gpu=opt.gpu, batch_limit=opt.bl)
-    print("best model path", best_model_path)
-    test(best_model_path, val_dataloader)
-    # test("lightning_logs/lightning_logs/version_19/checkpoints/epoch=30-step=3100.ckpt")
+    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+    #                         gpu=opt.gpu, batch_limit=opt.bl)
+    # print("best model path", best_model_path)
+    # test(best_model_path, val_dataloader)
+    test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
