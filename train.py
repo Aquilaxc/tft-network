@@ -137,17 +137,38 @@ def test(best_model_path, val_dataloader):
     for key, value in raw_predictions.items():
         # s = value.shape if value is not None else "None"
         print("raw predict---", key)
+
     # print("*"*50, raw_predictions.x["groups"])
     # print("~"*50, raw_predictions.x)
     # print("~"*50, raw_predictions.y)
     fig, ax = plt.subplots(2, 2)
     ax = ax.ravel()
+
+    print(raw_predictions.x)
     for idx in range(4):  # plot 10 examples
-        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-    # # ax[0].legend()
+        print("ax", idx)
+        # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
+        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
+        v = raw_predictions.x["groups"][idx]
+        # print(next(key for key, value in best_tft.hparams["embedding_labels"]["customer"] if value == v[0]))
+        subtitle = (next(key for key, value in best_tft.hparams["embedding_labels"]["customer"].items() if value == v[0]) +
+                    ", " +
+                    next(key for key, value in best_tft.hparams["embedding_labels"]["line"].items() if value == v[1]))
+        ax[idx].set_title(subtitle)
+    # ax[0].legend()
+    plt.subplots_adjust(wspace=0.3, hspace=0.3)
+
+    # predictions = best_tft.predict(val_dataloader, return_x=True)
+    # print("~~~" * 3, predictions.x)
+    # predictions_vs_actuals = best_tft.calculate_prediction_actual_by_variable(predictions.x, predictions.output)
+    # best_tft.plot_prediction_actual_by_variable(predictions_vs_actuals)
+
     interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
     best_tft.plot_interpretation(interpretation)
+
+    print("@"*70, best_tft.hparams)
     plt.show()
+
 
 
 if __name__ == "__main__":
@@ -173,3 +194,4 @@ if __name__ == "__main__":
     # print("best model path", best_model_path)
     # test(best_model_path, val_dataloader)
     test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
+
