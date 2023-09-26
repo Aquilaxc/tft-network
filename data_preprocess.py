@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from typing import Union, List
 import matplotlib.pyplot as plt
 
 
@@ -33,28 +34,58 @@ def europe_data():
     # plt.show()
 
 
-def network_data_preprocess(data="data/network/network_data_5min.csv"):
+def network_data_preprocess(data: str):
     df = pd.read_csv(data)
     # df = pd.melt(df, id_vars=["time", "customer", "line"], var_name="direction", value_name="usage")
+
+    # pytorch_forecasting/data/encoders.py/softplus_inv will make zero to NaN, caused by log(negative number). BUT WHY??????
+    df["log_in"] = np.where(df["in"] == 0, 0, np.log(df["in"]))
+    df["log_out"] = np.where(df["out"] == 0, 0, np.log(df["out"]))
     if "time_idx" not in df.columns:
         df["time_idx"] = df.groupby("line").cumcount() + 1
-    df["time"] = pd.to_datetime(df["time"], format='mixed')
+    df["time"] = pd.to_datetime(df["time"], format='%Y-%m-%d %H:%M:%S')
     df["month"] = df["time"].dt.month
+    # df["weekday"] = df["time"].dt.day_name()
+    weekday_to_num = {
+        "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6, "Sunday": 7
+    }
+    df["weekday"] = df["time"].dt.day_name().map(weekday_to_num)
     df["day"] = df["time"].dt.day
     df["hour"] = df["time"].dt.hour
     df["minute"] = df["time"].dt.minute
     df["line"] = df["line"].astype('category')
+    df = add_date_cyclical_features(df, ["month", "weekday", "day", "hour", "minute"])
     data_name = data.split('.')[0]
     df.to_csv(f"{data_name}_processed.csv")
     print(f"{data_name}_processed.csv")
 
 
+def add_date_cyclical_features(df: pd.DataFrame, features: Union[str, List[str]]) -> pd.DataFrame:
+    cycles = {
+        "month": 12,
+        "weekday": 7,
+        "day": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
+        "hour": 24,
+        "minute": 60
+    }
+    for feat in features:
+        assert feat in cycles.keys(), f"feature must be one of {(x for x in cycles.keys())}"
+        if feat == "day":
+            df[f"{feat}_cos"] = np.cos(np.pi * df[feat] /
+                                       df["month"].apply(lambda x: cycles[feat][x-1]))  # select max day
+        else:
+            df[f"{feat}_cos"] = np.cos(np.pi * df[feat] / cycles[feat])
+        df[f"{feat}_cos"] = np.where(np.isclose(df[f"{feat}_cos"], 0, atol=1e-10), 0, df[f"{feat}_cos"])    # Make zero
+    return df
+
+
 if __name__ == "__main__":
     data = "data/network/network_data_15min.csv"
-
     data_processed = f"{(data.split('.')[0])}_processed.csv"
     network_data_preprocess(data)
     pre = pd.read_csv(data)
     print(pre.shape)
     post = pd.read_csv(data_processed)
     print(post.shape)
+
+
