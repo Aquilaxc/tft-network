@@ -66,7 +66,7 @@ validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_r
 
 
 
-def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0):
+def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0, restore_path=None):
     # configure network and trainer
     early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
@@ -102,6 +102,7 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
         tft,
         train_dataloaders=train_dataloader,
         val_dataloaders=val_dataloader,
+        ckpt_path=restore_path  # None=start from fresh, path=start from restore path
     )
 
     best_model_path = trainer.checkpoint_callback.best_model_path
@@ -177,6 +178,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", action="store_true", help="Use GPU for training")
     parser.add_argument("--bs", type=int, default=64, help="batch size")
     parser.add_argument("--bl", type=float, default=1.0, help="batch limit")
+    parser.add_argument("--restore", type=str, default=None, help="restore ckpt path")
 
     opt = parser.parse_args()
     # opt = parser.parse_args(args=[])  # for Jupyter Notebook (Google Colab / Kaggle)
@@ -189,9 +191,9 @@ if __name__ == "__main__":
     train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
     val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
-    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-    #                         gpu=opt.gpu, batch_limit=opt.bl)
-    # print("best model path", best_model_path)
-    # test(best_model_path, val_dataloader)
-    test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
+    best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+                            gpu=opt.gpu, batch_limit=opt.bl, restore_path=opt.restore)
+    print("best model path", best_model_path)
+    test(best_model_path, val_dataloader)
+    # test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
 
