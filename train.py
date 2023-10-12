@@ -18,19 +18,20 @@ pd.set_option('display.max_columns', None)
 import torch
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
-from pytorch_forecasting.data import GroupNormalizer
+from pytorch_forecasting.data import GroupNormalizer, MultiNormalizer
 from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 # from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
+from lightning.pytorch.tuner import Tuner
 
-data = pd.read_csv("data/network/network_data_15min_processed.csv")
+data = pd.read_csv("data/network/network_data_5min_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
-print("*" * 50)
-print(data.columns)
-print(data.dtypes)
-print("NA\n", data[data["log_in"].isna()])
+# print("*" * 50)
+# print(data.columns)
+# print(data.dtypes)
+# print("NA\n", data[data["log_in"].isna()])
 
 max_prediction_length = 96
-max_encoder_length = max_prediction_length * 2
+max_encoder_length = max_prediction_length * 3 * 2
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 print("time idx ", data["time_idx"].max())
@@ -39,7 +40,7 @@ print("training cutoff", training_cutoff)
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
     time_idx="time_idx",
-    target="log_in",
+    target="in_log_norm",
     group_ids=["customer", "line"],
     min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
@@ -49,7 +50,7 @@ training = TimeSeriesDataSet(
     time_varying_known_categoricals=[],
     time_varying_known_reals=["month_cos", "weekday_cos", "day_cos", "hour_cos", "minute_cos"],
     time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=["log_in", "log_out"],
+    time_varying_unknown_reals=["in_log_norm", "out_log_norm"],
     target_normalizer=GroupNormalizer(
         groups=["customer", "line"], transformation="softplus"
     ),  # use softplus and normalize by group
@@ -58,17 +59,17 @@ training = TimeSeriesDataSet(
     add_encoder_length=True,
 )
 
-print("train ", type(training))
-
+# print("train dataset\n", training.index)
+print(f"training target <{training.target}>")
 # create validation set (predict=True) which means to predict the last max_prediction_length points in time
 # for each series
 validation = TimeSeriesDataSet.from_dataset(training, data, predict=True, stop_randomization=True)
-
+# print("validation dataset\n", validation.index)
 
 
 def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0):
     # configure network and trainer
-    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, verbose=False, mode="min")
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-5, patience=10, verbose=False, mode="min")
     lr_logger = LearningRateMonitor()  # log the learning rate
     logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
 
@@ -86,7 +87,7 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
     tft = TemporalFusionTransformer.from_dataset(
         training,
         learning_rate=0.001,
-        hidden_size=160,
+        hidden_size=320,
         attention_head_size=4,
         dropout=0.1,
         hidden_continuous_size=160,
@@ -109,9 +110,52 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0)
     return best_model_path
 
 
+def find_lr(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0):
+    # configure network and trainer
+    early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-5, patience=10, verbose=False, mode="min")
+    lr_logger = LearningRateMonitor()  # log the learning rate
+    logger = TensorBoardLogger("lightning_logs")  # logging results to a tensorboard
+
+    trainer = pl.Trainer(
+        max_epochs=60,
+        accelerator="cuda" if gpu else "cpu",
+        enable_model_summary=True,
+        gradient_clip_val=0.1,
+        limit_train_batches=batch_limit,  # coment in for training, running valiation every 30 batches
+        # fast_dev_run=True,  # comment in to check that networkor dataset has no serious bugs
+        callbacks=[lr_logger, early_stop_callback],
+        logger=logger,
+    )
+
+    tft = TemporalFusionTransformer.from_dataset(
+        training,
+        learning_rate=0.001,
+        hidden_size=320,
+        attention_head_size=4,
+        dropout=0.1,
+        hidden_continuous_size=160,
+        loss=QuantileLoss(),
+        log_interval=10,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
+        optimizer="Ranger",
+        reduce_on_plateau_patience=4,
+    )
+    print(f"Number of parameters in network: {tft.size() / 1e3:.1f}k")
+    res = Tuner(trainer).lr_find(
+        tft,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader,
+        max_lr=10.0,
+        min_lr=1e-6,
+    )
+
+    print(f"suggested learning rate: {res.suggestion()}")
+    fig = res.plot(show=True, suggest=True)
+    fig.show()
+
+
 def test(best_model_path, val_dataloader):
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
+    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
 
     for batch in val_dataloader:
         data, labels = batch
@@ -147,14 +191,14 @@ def test(best_model_path, val_dataloader):
     print(raw_predictions.x)
     for idx in range(4):  # plot 10 examples
         print("ax", idx)
-        # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
+        best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
+        # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
         v = raw_predictions.x["groups"][idx]
         # print(next(key for key, value in best_tft.hparams["embedding_labels"]["customer"] if value == v[0]))
         subtitle = (next(key for key, value in best_tft.hparams["embedding_labels"]["customer"].items() if value == v[0]) +
                     ", " +
                     next(key for key, value in best_tft.hparams["embedding_labels"]["line"].items() if value == v[1]))
-        ax[idx].set_title(subtitle)
+        # ax[idx].set_title(subtitle)
     # ax[0].legend()
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
@@ -191,7 +235,10 @@ if __name__ == "__main__":
 
     # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
     #                         gpu=opt.gpu, batch_limit=opt.bl)
+    #
     # print("best model path", best_model_path)
     # test(best_model_path, val_dataloader)
-    test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
+    test("lightning_logs/lightning_logs/colab_1011_lognorm_hsize=320/checkpoints/epoch=20-step=6867.ckpt", val_dataloader)
+
+    # find_lr(train_dataloader=train_dataloader, val_dataloader=val_dataloader, gpu=True, batch_limit=opt.bl)
 
