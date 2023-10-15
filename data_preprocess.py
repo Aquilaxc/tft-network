@@ -56,8 +56,8 @@ def network_data_preprocess(data: str):
     df["out_log_avg"] = df.groupby('line')['out_log'].transform('mean')
     df["in_log_var"] = df.groupby('line')['in_log'].transform('var')
     df["out_log_var"] = df.groupby('line')['out_log'].transform('var')
-    df["in_log_norm"] = df['in_log'] / np.sqrt(df["in_log_var"])
-    df["out_log_norm"] = df['out_log'] / np.sqrt(df["out_log_var"])
+    df["in_log_norm"] = (df['in_log'] - df['in_log_avg']) / np.sqrt(df["in_log_var"])
+    df["out_log_norm"] = (df['out_log'] - df['out_log_avg']) / np.sqrt(df["out_log_var"])
     # df["in_log_norm_mean"] = df.groupby('line')['in_log_norm'].transform('mean')
     # df["out_log_norm_mean"] = df.groupby('line')['out_log_norm'].transform('mean')
     if "time_idx" not in df.columns:
@@ -158,15 +158,16 @@ def show_origdata_hist(raw_data="network_data.csv", target=None, groupby=None):
 
 
 if __name__ == "__main__":
-    data = "data/network/network_data_5min.csv"
-    data_processed = f"{(data.split('.')[0])}_processed.csv"
-    network_data_preprocess(data)
-    pre = pd.read_csv(data)
-    print(pre.shape)
-    post = pd.read_csv(data_processed)
-    print(post.shape)
+    # data = "data/network/network_data_15min.csv"
+    # data_processed = f"{(data.split('.')[0])}_processed.csv"
+    # network_data_preprocess(data)
+    # pre = pd.read_csv(data)
+    # print(pre.shape)
+    # post = pd.read_csv(data_processed)
+    # print(post.shape)
 
-    show_data_plot("data/network/network_data_5min_processed.csv", ["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line", timecol='time')
+
+    show_data_plot("data/network/network_data_15min_processed.csv", ["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line", timecol='time')
     # show_data_plot("data/eu_net/merged_data.csv", ["usage"], groupby="region", timecol='Time')
 
     # show_origdata_hist(raw_data="data/network/network_data_15min_processed.csv", target=["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line")

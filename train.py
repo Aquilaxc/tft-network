@@ -23,19 +23,21 @@ from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 # from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 from lightning.pytorch.tuner import Tuner
 
-data = pd.read_csv("data/network/network_data_5min_processed.csv")
+interval = 15
+data = pd.read_csv(f"data/network/network_data_{interval}min_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
 # print("*" * 50)
 # print(data.columns)
 # print(data.dtypes)
 # print("NA\n", data[data["log_in"].isna()])
 
-max_prediction_length = 96
-max_encoder_length = max_prediction_length * 3 * 2
+max_prediction_length = int(24 * 60 / interval)    # One day
+max_encoder_length = max_prediction_length * 7    # One week
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 print("time idx ", data["time_idx"].max())
-print("training cutoff", training_cutoff)
+print("prediction length", max_prediction_length)
+print("encoder length", max_encoder_length)
 
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
@@ -50,9 +52,9 @@ training = TimeSeriesDataSet(
     time_varying_known_categoricals=[],
     time_varying_known_reals=["month_cos", "weekday_cos", "day_cos", "hour_cos", "minute_cos"],
     time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=["in_log_norm", "out_log_norm"],
+    time_varying_unknown_reals=["in_log_norm", "in_log_avg", "in_log_var"],
     target_normalizer=GroupNormalizer(
-        groups=["customer", "line"], transformation="softplus"
+        groups=["customer", "line"], transformation="relu"
     ),  # use softplus and normalize by group
     add_relative_time_idx=True,
     add_target_scales=True,
@@ -87,10 +89,10 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0,
     tft = TemporalFusionTransformer.from_dataset(
         training,
         learning_rate=0.001,
-        hidden_size=320,
-        attention_head_size=4,
+        hidden_size=80,
+        attention_head_size=8,
         dropout=0.1,
-        hidden_continuous_size=160,
+        hidden_continuous_size=80,
         loss=QuantileLoss(),
         log_interval=10,  # uncomment for learning rate finder and otherwise, e.g. to 10 for logging every 10 batches
         optimizer="Ranger",
@@ -107,7 +109,7 @@ def train(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.0,
     )
 
     best_model_path = trainer.checkpoint_callback.best_model_path
-    print("`"*50, "best model path", best_model_path)
+    print("`"*50, "\n", "best model path: ", best_model_path)
     return best_model_path
 
 
@@ -160,8 +162,8 @@ def test(best_model_path, val_dataloader):
 
     for batch in val_dataloader:
         data, labels = batch
-        for key, value in data.items():
-            print(key, value.shape)
+        # for key, value in data.items():
+        #     print(key, value.shape)
         # print(labels)
         print("target scale\n", data["target_scale"])
         print("decoder target\n", data["decoder_target"].mean(axis=1))
@@ -179,20 +181,26 @@ def test(best_model_path, val_dataloader):
 
     # # # raw predictions are a dictionary from which all kind of information including quantiles can be extracted
     raw_predictions = best_tft.predict(val_dataloader, mode="raw", return_x=True, return_y=True)
-    for key, value in raw_predictions.items():
-        # s = value.shape if value is not None else "None"
-        print("raw predict---", key)
 
-    # print("*"*50, raw_predictions.x["groups"])
-    # print("~"*50, raw_predictions.x)
-    # print("~"*50, raw_predictions.y)
+    print(raw_predictions.x["target_scale"])
+
     fig, ax = plt.subplots(2, 2)
     ax = ax.ravel()
 
-    print(raw_predictions.x)
+    print(raw_predictions.x.keys())
+
     for idx in range(4):  # plot 10 examples
-        print("ax", idx)
+        # print("ax", idx)
+        """
+        NOTE for this function
+        1. y_raw is actually equal to y_quantile. Their shape will be [num_of_groups, prediction_length, num_of_quantiles]
+        2. y_all is actually equal to y. Why it needs another torch.cat?
+        3. y_hat is the prediction.
+        4. output["prediction"] is y_raw
+        """
         best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
+        print("raw pred pred", raw_predictions.output["prediction"].shape)
+
         # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
         v = raw_predictions.x["groups"][idx]
         # print(next(key for key, value in best_tft.hparams["embedding_labels"]["customer"] if value == v[0]))
@@ -200,7 +208,6 @@ def test(best_model_path, val_dataloader):
                     ", " +
                     next(key for key, value in best_tft.hparams["embedding_labels"]["line"].items() if value == v[1]))
         # ax[idx].set_title(subtitle)
-    # ax[0].legend()
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
     # predictions = best_tft.predict(val_dataloader, return_x=True)
@@ -211,7 +218,7 @@ def test(best_model_path, val_dataloader):
     interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
     best_tft.plot_interpretation(interpretation)
 
-    print("@"*70, best_tft.hparams)
+    # print("@"*70, "\n", best_tft.hparams)
     plt.show()
 
 
@@ -235,12 +242,12 @@ if __name__ == "__main__":
     train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=0)
     val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size * 10, num_workers=0)
 
-    best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
-                            gpu=opt.gpu, batch_limit=opt.bl, restore_path=opt.restore)
-    print("best model path", best_model_path)
-    test(best_model_path, val_dataloader)
+    # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
+    #                         gpu=opt.gpu, batch_limit=opt.bl, restore_path=opt.restore)
+    # test(best_model_path, val_dataloader)
     # test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
-    test("lightning_logs/lightning_logs/colab_1011_lognorm_hsize=320/checkpoints/epoch=20-step=6867.ckpt", val_dataloader)
+    test("lightning_logs/lightning_logs/colab_1013_inlognorm/checkpoints/epoch=27-step=4564.ckpt", val_dataloader)
+    # test("lightning_logs/lightning_logs/colab_1012_hsize=80_csize=80_atthead=8/checkpoints/epoch=59-step=9780.ckpt", val_dataloader)
 
     # find_lr(train_dataloader=train_dataloader, val_dataloader=val_dataloader, gpu=True, batch_limit=opt.bl)
 
