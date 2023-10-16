@@ -31,8 +31,8 @@ data["line"] = data["line"].astype('category').astype(str)
 # print(data.dtypes)
 # print("NA\n", data[data["log_in"].isna()])
 
-max_prediction_length = int(24 * 60 / interval)    # One day
-max_encoder_length = max_prediction_length * 7    # One week
+max_prediction_length = int(24 * 60 / interval) * 1    # One day
+max_encoder_length = max_prediction_length * 7   # One week
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 print("time idx ", data["time_idx"].max())
@@ -42,7 +42,7 @@ print("encoder length", max_encoder_length)
 training = TimeSeriesDataSet(
     data[lambda x: x.time_idx <= training_cutoff],
     time_idx="time_idx",
-    target="in_log_norm",
+    target="in_log",
     group_ids=["customer", "line"],
     min_encoder_length=max_encoder_length // 2,  # keep encoder length long (as it is in the validation set)
     max_encoder_length=max_encoder_length,
@@ -52,9 +52,9 @@ training = TimeSeriesDataSet(
     time_varying_known_categoricals=[],
     time_varying_known_reals=["month_cos", "weekday_cos", "day_cos", "hour_cos", "minute_cos"],
     time_varying_unknown_categoricals=[],
-    time_varying_unknown_reals=["in_log_norm", "in_log_avg", "in_log_var"],
+    time_varying_unknown_reals=["in_log", "in_log_avg", "in_log_var"],
     target_normalizer=GroupNormalizer(
-        groups=["customer", "line"], transformation=None
+        groups=["customer", "line"], transformation='softplus'
     ),  # use softplus and normalize by group
     add_relative_time_idx=True,
     add_target_scales=True,
@@ -246,9 +246,9 @@ if __name__ == "__main__":
     # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
     #                         gpu=opt.gpu, batch_limit=opt.bl, restore_path=opt.restore)
     # test(best_model_path, val_dataloader)
-    # test("lightning_logs/lightning_logs/colab_0926_log/checkpoints/epoch=17-step=5886.ckpt", val_dataloader)
-    test("lightning_logs/lightning_logs/colab_1013_inlognorm/checkpoints/epoch=27-step=4564.ckpt", val_dataloader)
-    # test("lightning_logs/lightning_logs/colab_1012_hsize=80_csize=80_atthead=8/checkpoints/epoch=59-step=9780.ckpt", val_dataloader)
+    # test("lightning_logs/lightning_logs/colab_1016_activate=None/checkpoints/epoch=29-step=4890.ckpt", val_dataloader)
+    # test("lightning_logs/lightning_logs/colab_1013_inlognorm/checkpoints/epoch=27-step=4564.ckpt", val_dataloader)
+    test("lightning_logs/lightning_logs/colab_1012_hsize=80_csize=80_atthead=8/checkpoints/epoch=59-step=9780.ckpt", val_dataloader)
 
     # find_lr(train_dataloader=train_dataloader, val_dataloader=val_dataloader, gpu=True, batch_limit=opt.bl)
 

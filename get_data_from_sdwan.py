@@ -9,7 +9,7 @@ import pandas as pd
 import os
 import openpyxl
 
-token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2OTU0MzE1NDUwMDcsInBheWxvYWQiOiIxNDYifQ.fli7-G63LtrUdCKPahRHKVXl75asBZuyQWHcbz1IRoE"
+token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE2OTc1MTIxNjkyMDQsInBheWxvYWQiOiIxNDYifQ.TwdFjV2iFojHPnUSL15qfVT6Ii77ATdGXA-ZdmehJmE"
 # url_login = "https://sdwan-uiv1.dyxnet.com:10082/api/auth/login"
 # curl -k -i -X POST "https://sdwan-uiv1.dyxnet.com:10082/api/auth/login" -H  "Content-Type: application/json" -d "{\"account\":\"jeffz\", \"password\": \"jeffz#202309\"}"
 
@@ -18,7 +18,7 @@ def try_data():
     headers = {"Content-Type": "application/json",
                "Authorization": token}
     url_get = (f"https://sdwan-uiv1.dyxnet.com:10082/api/cpe/65/peers/networkUsage/wanType/VRF_PEER/" +
-                         f"wan/0?from=2023-09-01%2000:00:00&to=2023-09-04%2023:59:59")
+                         f"wan/0?from=2022-11-01%2000:00:00&to=2022-11-14%2023:59:59")
     login_response = requests.get(url_get, headers=headers, verify=False)
     data = login_response.json()
     data = data["data"]["peerNetworkUsageList"][0]["data"]
@@ -73,8 +73,8 @@ def get_data(file_name="network_data.csv"):
 
 def get_data_15min(file_name="network_data.csv"):
     format = file_name.split('.')[-1]
-    start_date = datetime(2023, 6, 1)
-    end_date = datetime(2023, 9, 18)
+    start_date = datetime(2022, 10, 17)
+    end_date = datetime(2023, 10, 18)
     headers = {"Content-Type": "application/json",
                "Authorization": token}
     customers = [65, 31, 33, 36]
@@ -83,7 +83,7 @@ def get_data_15min(file_name="network_data.csv"):
     for customer in customers:
         current_start_date = start_date
         while current_start_date <= end_date:
-            current_end_date = current_start_date + timedelta(days=6)
+            current_end_date = current_start_date + timedelta(days=13)
             start_month = current_start_date.strftime('%m')
             start_day = current_start_date.strftime('%d')
             end_month = current_end_date.strftime('%m')
@@ -94,7 +94,7 @@ def get_data_15min(file_name="network_data.csv"):
             data = login_response.json()
             data = data["data"]["peerNetworkUsageList"][0]["data"]
 
-            current_start_date += timedelta(days=7)       # Next time window, 3 days later
+            current_start_date += timedelta(days=14)       # Next time window, 3 days later
 
             if data == []:
                 print(f"xxxx  customer<{customer}>, {start_month}-{start_day} ~ {end_month}-{end_day}: None")
@@ -121,7 +121,7 @@ def show_data_plot(raw_data="network_data.csv"):
     end_time = data.max()['time']
     date_range = pd.date_range(start=start_time, end=end_time, freq="W")
     print(date_range)
-    data['time'] = pd.to_datetime(data['time'], format='mixed')
+    data['time'] = pd.to_datetime(data['time'], format='%Y-%m-%d %H:%M:%S')
     # lines = data['line'].unique()
     fig, ax = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
     for group in [65, 31, 33, 36]:
@@ -145,7 +145,7 @@ def show_data_plot(raw_data="network_data.csv"):
 
 if __name__ == "__main__":
     # get_data()
-    # get_data_15min("network_data_15min.csv")
+    get_data_15min("data/network/network_data_30min-1yr.csv")
     # try_data()
-    show_data_plot("network_data_15min.csv")
+    # show_data_plot("data/network/network_data_120min-1yr.csv")
 

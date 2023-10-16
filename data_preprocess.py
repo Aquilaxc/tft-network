@@ -8,6 +8,15 @@ pd.set_option('display.max_columns', None)  # No limit for column on display
 pd.set_option('display.max_rows', 10)        # Max rows on display = 10
 
 
+china_2023_holidays = ['2023-01-21', '2023-01-22', '2023-01-23', '2023-01-24', '2023-01-25', '2023-01-26', '2023-01-27',
+                       '2023-04-05',
+                       '2023-04-29', '2023-04-30', '2023-05-01', '2023-05-02', '2023-05-03',
+                       '2023-06-22', '2023-06-23', '2023-06-24',
+                       '2023-09-29', '2023-09-30',
+                       '2023-10-01', '2023-10-02', '2023-10-03', '2023-10-04', '2023-10-05', '2023-10-06']
+
+
+
 def europe_data():
     df = pd.read_csv("data/eu_net/ec_data_set.csv")
     df2 = pd.read_csv("data/eu_net/isp.csv")
@@ -69,6 +78,8 @@ def network_data_preprocess(data: str):
         "Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6, "Sunday": 7
     }
     df["weekday"] = df["time"].dt.day_name().map(weekday_to_num)
+    df["is_holiday"] = df["time"].apply(lambda x: 'yes' if x.date().strftime('%Y-%m-%d') in china_2023_holidays else 'no')
+    # df["holiday"] = pd.to_datetime(df["time"], format='%Y-%m-%d %H:%M:%S').dt.date
     df["day"] = df["time"].dt.day
     df["hour"] = df["time"].dt.hour
     df["minute"] = df["time"].dt.minute
@@ -98,11 +109,12 @@ def add_date_cyclical_features(df: pd.DataFrame, features: Union[str, List[str]]
     return df
 
 
-def show_data_plot(raw_data="network_data.csv", target=None, groupby=None, timecol=None):
+def show_data_plot(raw_data="network_data.csv", target=None, groupby=None, timecol=None, start_t=None):
     target = [] if target is None else target
     groupby = [] if groupby is None else groupby
     data = pd.read_csv(raw_data)
-    start_time = data.min()[timecol]
+    start_time = data.min()[timecol] if start_t is None else start_t
+    print("start time:", start_time)
     end_time = data.max()[timecol]
     date_range = pd.date_range(start=start_time, end=end_time, freq="W")
     print(date_range)
@@ -112,6 +124,8 @@ def show_data_plot(raw_data="network_data.csv", target=None, groupby=None, timec
 
     for group in groups:
         group_data = data[data[groupby] == group]
+        if start_t is not None:
+            group_data = group_data[group_data[timecol] >= start_t]
         if len(target) > 1:
             for i, t in enumerate(target):
                 ax[i].plot(group_data[timecol].to_numpy(), group_data[t].to_numpy(), label=group)
@@ -158,7 +172,7 @@ def show_origdata_hist(raw_data="network_data.csv", target=None, groupby=None):
 
 
 if __name__ == "__main__":
-    data = "data/network/network_data_15min.csv"
+    data = "data/network/network_data_30min-1yr.csv"
     data_processed = f"{(data.split('.')[0])}_processed.csv"
     network_data_preprocess(data)
     pre = pd.read_csv(data)
@@ -167,7 +181,10 @@ if __name__ == "__main__":
     print(post.shape)
 
 
-    show_data_plot("data/network/network_data_15min_processed.csv", ["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line", timecol='time')
+    show_data_plot("data/network/network_data_30min-1yr_processed.csv", ["in_log", "out_log", "is_holiday"],
+                   groupby="line", timecol='time',
+                   # start_t='2023-09-01 00:00:00'
+                   )
     # show_data_plot("data/eu_net/merged_data.csv", ["usage"], groupby="region", timecol='Time')
 
     # show_origdata_hist(raw_data="data/network/network_data_15min_processed.csv", target=["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line")
