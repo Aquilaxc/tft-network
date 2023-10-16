@@ -54,7 +54,7 @@ training = TimeSeriesDataSet(
     time_varying_unknown_categoricals=[],
     time_varying_unknown_reals=["in_log_norm", "in_log_avg", "in_log_var"],
     target_normalizer=GroupNormalizer(
-        groups=["customer", "line"], transformation="relu"
+        groups=["customer", "line"], transformation=None
     ),  # use softplus and normalize by group
     add_relative_time_idx=True,
     add_target_scales=True,
@@ -157,7 +157,8 @@ def find_lr(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.
 
 
 def test(best_model_path, val_dataloader):
-    best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
+    map_location = None if torch.cuda.is_available() else torch.device('cpu')
+    best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path, map_location=map_location)
     predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
 
     for batch in val_dataloader:

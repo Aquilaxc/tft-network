@@ -158,13 +158,13 @@ def show_origdata_hist(raw_data="network_data.csv", target=None, groupby=None):
 
 
 if __name__ == "__main__":
-    # data = "data/network/network_data_15min.csv"
-    # data_processed = f"{(data.split('.')[0])}_processed.csv"
-    # network_data_preprocess(data)
-    # pre = pd.read_csv(data)
-    # print(pre.shape)
-    # post = pd.read_csv(data_processed)
-    # print(post.shape)
+    data = "data/network/network_data_15min.csv"
+    data_processed = f"{(data.split('.')[0])}_processed.csv"
+    network_data_preprocess(data)
+    pre = pd.read_csv(data)
+    print(pre.shape)
+    post = pd.read_csv(data_processed)
+    print(post.shape)
 
 
     show_data_plot("data/network/network_data_15min_processed.csv", ["in_log", "in_log_norm", "out_log", "out_log_norm"], groupby="line", timecol='time')
