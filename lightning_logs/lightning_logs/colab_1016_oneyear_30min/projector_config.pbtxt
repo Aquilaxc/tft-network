@@ -1,0 +1,15 @@
+embeddings {
+  tensor_name: "customer:10317"
+  metadata_path: "10317/customer/metadata.tsv"
+  tensor_path: "10317/customer/tensors.tsv"
+}
+embeddings {
+  tensor_name: "line:10317"
+  metadata_path: "10317/line/metadata.tsv"
+  tensor_path: "10317/line/tensors.tsv"
+}
+embeddings {
+  tensor_name: "is_holiday:10317"
+  metadata_path: "10317/is_holiday/metadata.tsv"
+  tensor_path: "10317/is_holiday/tensors.tsv"
+}

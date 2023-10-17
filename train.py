@@ -23,16 +23,16 @@ from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 # from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 from lightning.pytorch.tuner import Tuner
 
-interval = 15
-data = pd.read_csv(f"data/network/network_data_{interval}min_processed.csv")
+interval = 30
+data = pd.read_csv(f"data/network/network_data_{interval}min-1yr_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
 # print("*" * 50)
 # print(data.columns)
 # print(data.dtypes)
 # print("NA\n", data[data["log_in"].isna()])
 
-max_prediction_length = int(24 * 60 / interval) * 1    # One day
-max_encoder_length = max_prediction_length * 7   # One week
+max_prediction_length = int(24 * 60 / interval) * 3    # One day
+max_encoder_length = int(max_prediction_length * 4)  # One week
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 print("time idx ", data["time_idx"].max())
@@ -48,7 +48,7 @@ training = TimeSeriesDataSet(
     max_encoder_length=max_encoder_length,
     min_prediction_length=1,
     max_prediction_length=max_prediction_length,
-    static_categoricals=["customer", "line"],
+    static_categoricals=["customer", "line", "is_holiday"],
     time_varying_known_categoricals=[],
     time_varying_known_reals=["month_cos", "weekday_cos", "day_cos", "hour_cos", "minute_cos"],
     time_varying_unknown_categoricals=[],
@@ -159,7 +159,7 @@ def find_lr(train_dataloader=None, val_dataloader=None, gpu=True, batch_limit=1.
 def test(best_model_path, val_dataloader):
     map_location = None if torch.cuda.is_available() else torch.device('cpu')
     best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path, map_location=map_location)
-    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cpu"))
+    predictions = best_tft.predict(val_dataloader, return_y=True, trainer_kwargs=dict(accelerator="cuda"))
 
     for batch in val_dataloader:
         data, labels = batch
@@ -246,9 +246,9 @@ if __name__ == "__main__":
     # best_model_path = train(train_dataloader=train_dataloader, val_dataloader=val_dataloader,
     #                         gpu=opt.gpu, batch_limit=opt.bl, restore_path=opt.restore)
     # test(best_model_path, val_dataloader)
-    # test("lightning_logs/lightning_logs/colab_1016_activate=None/checkpoints/epoch=29-step=4890.ckpt", val_dataloader)
+    test("lightning_logs/lightning_logs/colab_1016_oneyear_30min/checkpoints/epoch=56-step=10317.ckpt", val_dataloader)
     # test("lightning_logs/lightning_logs/colab_1013_inlognorm/checkpoints/epoch=27-step=4564.ckpt", val_dataloader)
-    test("lightning_logs/lightning_logs/colab_1012_hsize=80_csize=80_atthead=8/checkpoints/epoch=59-step=9780.ckpt", val_dataloader)
+    # test("lightning_logs/lightning_logs/colab_1012_hsize=80_csize=80_atthead=8/checkpoints/epoch=59-step=9780.ckpt", val_dataloader)
 
     # find_lr(train_dataloader=train_dataloader, val_dataloader=val_dataloader, gpu=True, batch_limit=opt.bl)
 
