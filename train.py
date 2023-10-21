@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 pd.set_option('display.max_columns', None)
 import torch
+import torch.nn as nn
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer, MultiNormalizer
@@ -23,16 +24,21 @@ from pytorch_forecasting.metrics import MAE, SMAPE, PoissonLoss, QuantileLoss
 # from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 from lightning.pytorch.tuner import Tuner
 
+
 interval = 30
+target_date = "2023-10-02"
+target_date = pd.to_datetime(target_date)
 data = pd.read_csv(f"data/network/network_data_{interval}min-1yr_processed.csv")
 data["line"] = data["line"].astype('category').astype(str)
+data["time"] = pd.to_datetime(data["time"])
+data = data[data["time"] <= target_date]
 # print("*" * 50)
 # print(data.columns)
 # print(data.dtypes)
 # print("NA\n", data[data["log_in"].isna()])
 
-max_prediction_length = int(24 * 60 / interval) * 3    # One day
-max_encoder_length = int(max_prediction_length * 4)  # One week
+max_prediction_length = int(24 * 60 / interval) * 2    # One day
+max_encoder_length = int(max_prediction_length * 7)  # One week
 training_cutoff = data["time_idx"].max() - max_prediction_length
 
 print("time idx ", data["time_idx"].max())
@@ -167,7 +173,7 @@ def test(best_model_path, val_dataloader):
         #     print(key, value.shape)
         # print(labels)
         print("target scale\n", data["target_scale"])
-        print("decoder target\n", data["decoder_target"].mean(axis=1))
+        print("decoder target\n", data["decoder_target"].size())
         for l in labels:
             if l is not None:
                 print("labels:   ", l.shape)
@@ -190,6 +196,17 @@ def test(best_model_path, val_dataloader):
 
     print(raw_predictions.x.keys())
 
+    file_output = "output_for_plot.csv"
+    if os.path.exists(file_output):
+        data_write = pd.read_csv(file_output)
+        data_write = data_write.to_dict(orient='list')
+    else:
+        data_write = {"time": [],
+                      "line": [],
+                      "gt": [],
+                      "0.02": [], "0.10": [], "0.25": [], "0.5": [], "0.75": [], "0.90": [], "0.98": []}
+    minimum_time = min(data_write["time"]) if data_write["time"] != [] else 0
+
     for idx in range(4):  # plot 10 examples
         # print("ax", idx)
         """
@@ -200,7 +217,15 @@ def test(best_model_path, val_dataloader):
         4. output["prediction"] is y_raw
         """
         best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=True, ax=ax[idx])
-        print("raw pred pred", raw_predictions.output["prediction"].shape)
+        print("raw pred pred", raw_predictions.output["prediction"].shape, raw_predictions.output["prediction"][idx, 0, :])
+        print("pred xxxxx", raw_predictions.x.keys())
+        print("pred output", raw_predictions.output.keys())
+        print("x decoder target ++++++++++++++", raw_predictions.x["decoder_target"][idx, :].tolist())
+
+        for ii, qi in enumerate(["0.02", "0.10", "0.25", "0.5", "0.75", "0.90", "0.98"]):
+            data_write[qi] += raw_predictions.output["prediction"][idx, :, ii].tolist()
+        data_write["time"] += list(range(minimum_time - max_prediction_length, minimum_time))
+        data_write["gt"] += raw_predictions.x["decoder_target"][idx, :].tolist()
 
         # best_tft.plot_prediction(raw_predictions.x, raw_predictions.output, idx=idx, add_loss_to_title=False, ax=ax[idx])
         v = raw_predictions.x["groups"][idx]
@@ -208,7 +233,10 @@ def test(best_model_path, val_dataloader):
         subtitle = (next(key for key, value in best_tft.hparams["embedding_labels"]["customer"].items() if value == v[0]) +
                     ", " +
                     next(key for key, value in best_tft.hparams["embedding_labels"]["line"].items() if value == v[1]))
+        print("subtitle", subtitle)
+        data_write["line"] += [subtitle] * max_prediction_length
         # ax[idx].set_title(subtitle)
+
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
 
     # predictions = best_tft.predict(val_dataloader, return_x=True)
@@ -218,6 +246,13 @@ def test(best_model_path, val_dataloader):
 
     interpretation = best_tft.interpret_output(raw_predictions.output, reduction="sum")
     best_tft.plot_interpretation(interpretation)
+
+    # print("``````````````````````` \n", data_write)
+    for key, value in data_write.items():
+        print(key, len(value))
+    data_write = pd.DataFrame(data_write)
+    data_write.sort_values(by=["line", "time"], ascending=[True, True])
+    data_write.to_csv("output_for_plot.csv", index=False)
 
     # print("@"*70, "\n", best_tft.hparams)
     plt.show()
